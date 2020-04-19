@@ -59,7 +59,7 @@ describe('Creating pipeline with macros ', () => {
     getArtifactsPoll(headers);
   });
 
-  it('should be successful for preview', () => {
+  it('and providing wrong runtime arguments should fail the pipeline preview.', () => {
     // Go to Pipelines studio
     cy.visit('/pipelines/ns/default/studio');
     cy.window().then((window) => {
@@ -68,21 +68,13 @@ describe('Creating pipeline with macros ', () => {
     if (skipPreviewTests) {
       skip();
     }
-    cy.url().should('include', '/studio');
     cy.upload_pipeline(
       'pipeline_with_macros.json',
       '#pipeline-import-config-link > input[type="file"]'
-    ).then((subject) => {
-      expect(subject.length).to.be.eq(1);
-    });
-  });
-
-  it('and providing wrong runtime arguments should fail the pipeline preview.', () => {
-    if (skipPreviewTests) {
-      skip();
-    }
+    );
+    cy.wait(10000);
     cy.get(dataCy('pipeline-preview-btn')).click();
-    cy.get(dataCy('preview-config-btn')).click();
+    cy.get(dataCy('preview-top-run-btn')).click();
     cy.get(dataCy(RUNTIME_ARGS_PREVIEW_SELECTOR)).should('exist');
     // Entering fake runtime arguments to fail the pipeline run
     cy.get(
@@ -147,11 +139,10 @@ describe('Creating pipeline with macros ', () => {
       `${dataCy(RUNTIME_ARGS_PREVIEW_SELECTOR)} ${dataCy(2)} ${dataCy(RUNTIME_ARGS_KEY_SELECTOR)}`
     ).should('not.exist');
     // running pipeline with fake runtime arguments
-    cy.get(dataCy('run-preview-btn')).click();
-    cy.get(`${dataCy('valium-banner-hydrator')} span`).should(
-      'have.text',
-      PREVIEW_FAILED_BANNER_MSG
-    );
+    cy.get(dataCy('preview-configure-run-btn')).click();
+    cy.get(`${dataCy('valium-banner-hydrator')}`).contains(PREVIEW_FAILED_BANNER_MSG, {
+      timeout: PIPELINE_RUN_TIMEOUT,
+    });
     cy.get(`${dataCy('valium-banner-hydrator')} button`).click();
   });
 
@@ -159,6 +150,8 @@ describe('Creating pipeline with macros ', () => {
     if (skipPreviewTests) {
       skip();
     }
+    // Since the preview already ran with invalid macros (stored in the state)
+    // we need to configure the preview before running.
     cy.get(dataCy('preview-config-btn')).click();
     cy.get(dataCy(RUNTIME_ARGS_PREVIEW_SELECTOR)).should('exist');
     cy.get(
@@ -203,11 +196,10 @@ describe('Creating pipeline with macros ', () => {
     cy.get(
       `${dataCy(RUNTIME_ARGS_PREVIEW_SELECTOR)} ${dataCy(1)} ${dataCy(RUNTIME_ARGS_VALUE_SELECTOR)}`
     ).type(SINK_PATH_VAL);
-    cy.get(dataCy('run-preview-btn')).click();
-    cy.get(`${dataCy('valium-banner-hydrator')} span`).should(
-      'have.text',
-      PREVIEW_SUCCESS_BANNER_MSG
-    );
+    cy.get(dataCy('preview-configure-run-btn')).click();
+    cy.get(`${dataCy('valium-banner-hydrator')}`).contains(PREVIEW_SUCCESS_BANNER_MSG, {
+      timeout: PIPELINE_RUN_TIMEOUT,
+    });
     cy.get(`${dataCy('valium-banner-hydrator')} button`).click();
   });
 });
