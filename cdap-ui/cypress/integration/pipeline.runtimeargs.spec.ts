@@ -16,7 +16,11 @@
 
 import { loginIfRequired, getArtifactsPoll } from '../helpers';
 import { dataCy } from '../helpers';
-import { RUNTIME_ARGS_DEPLOYED_SELECTOR, RUNTIME_ARGS_KEY_SELECTOR, RUNTIME_ARGS_VALUE_SELECTOR } from '../support/constants';
+import {
+  RUNTIME_ARGS_DEPLOYED_SELECTOR,
+  RUNTIME_ARGS_KEY_SELECTOR,
+  RUNTIME_ARGS_VALUE_SELECTOR,
+} from '../support/constants';
 let headers = {};
 const PIPELINE_RUN_TIMEOUT = 360000;
 const RUNTIME_ARGS_PREVIEW_SELECTOR = 'runtimeargs-preview';
@@ -29,16 +33,23 @@ const PREVIEW_SUCCESS_BANNER_MSG =
 const SINK_PATH_VAL = '/tmp/cdap-ui-integration-fixtures';
 const SOURCE_PATH_VAL = 'file:/tmp/cdap-ui-integration-fixtures/airports.csv';
 
-/* Disabling preview tests for now because our E2E tests don't have preview enabled
- describe('Creating pipeline with macros ', () => {
+let skipPreviewTests = false;
+// @ts-ignore "cy.state" is not in the "cy" type
+const getMochaContext = () => cy.state('runnable').ctx;
+const skip = () => {
+  const ctx = getMochaContext();
+  return ctx.skip();
+};
+
+describe('Creating pipeline with macros ', () => {
   before(() => {
     loginIfRequired().then(() => {
-      cy.getCookie('CDAP_Auth_Token').then(cookie => {
+      cy.getCookie('CDAP_Auth_Token').then((cookie) => {
         if (!cookie) {
           return;
         }
         headers = {
-          Authorization: 'Bearer ' + cookie.value
+          Authorization: 'Bearer ' + cookie.value,
         };
       });
     });
@@ -51,16 +62,25 @@ const SOURCE_PATH_VAL = 'file:/tmp/cdap-ui-integration-fixtures/airports.csv';
   it('should be successful for preview', () => {
     // Go to Pipelines studio
     cy.visit('/pipelines/ns/default/studio');
+    cy.window().then((window) => {
+      skipPreviewTests = window.CDAP_CONFIG.hydrator.previewEnabled !== true;
+    });
+    if (skipPreviewTests) {
+      skip();
+    }
     cy.url().should('include', '/studio');
     cy.upload_pipeline(
       'pipeline_with_macros.json',
       '#pipeline-import-config-link > input[type="file"]'
-    ).then(subject => {
+    ).then((subject) => {
       expect(subject.length).to.be.eq(1);
     });
   });
 
   it('and providing wrong runtime arguments should fail the pipeline preview.', () => {
+    if (skipPreviewTests) {
+      skip();
+    }
     cy.get(dataCy('pipeline-preview-btn')).click();
     cy.get(dataCy('preview-config-btn')).click();
     cy.get(dataCy(RUNTIME_ARGS_PREVIEW_SELECTOR)).should('exist');
@@ -136,6 +156,9 @@ const SOURCE_PATH_VAL = 'file:/tmp/cdap-ui-integration-fixtures/airports.csv';
   });
 
   it('and providing right runtime arguments should pass the pipeline preview.', () => {
+    if (skipPreviewTests) {
+      skip();
+    }
     cy.get(dataCy('preview-config-btn')).click();
     cy.get(dataCy(RUNTIME_ARGS_PREVIEW_SELECTOR)).should('exist');
     cy.get(
@@ -188,17 +211,17 @@ const SOURCE_PATH_VAL = 'file:/tmp/cdap-ui-integration-fixtures/airports.csv';
     cy.get(`${dataCy('valium-banner-hydrator')} button`).click();
   });
 });
- */
+
 describe('Deploying pipeline with temporary runtime arguments', () => {
   const runtimeArgsPipeline = `runtime_args_pipeline_${Date.now()}`;
   before(() => {
     loginIfRequired().then(() => {
-      cy.getCookie('CDAP_Auth_Token').then(cookie => {
+      cy.getCookie('CDAP_Auth_Token').then((cookie) => {
         if (!cookie) {
           return;
         }
         headers = {
-          Authorization: 'Bearer ' + cookie.value
+          Authorization: 'Bearer ' + cookie.value,
         };
       });
     });
@@ -218,7 +241,7 @@ describe('Deploying pipeline with temporary runtime arguments', () => {
     cy.upload_pipeline(
       'pipeline_with_macros.json',
       '#pipeline-import-config-link > input[type="file"]'
-    ).then(subject => {
+    ).then((subject) => {
       expect(subject.length).to.be.eq(1);
     });
     cy.get('[title="Airport_source"').should('exist');
@@ -267,9 +290,11 @@ describe('Deploying pipeline with temporary runtime arguments', () => {
     cy.get('.arrow-btn-container').click();
     cy.get(dataCy(RUNTIME_ARGS_MODELESS_LOADING_SELECTOR)).should('not.exist');
     cy.get(dataCy(RUNTIME_ARGS_DEPLOYED_SELECTOR)).should('exist');
-    cy.get(`${dataCy(RUNTIME_ARGS_DEPLOYED_SELECTOR)} ${dataCy(2)} ${
-      dataCy(RUNTIME_ARGS_VALUE_SELECTOR)}`)
-      .should('not.exist');
+    cy.get(
+      `${dataCy(RUNTIME_ARGS_DEPLOYED_SELECTOR)} ${dataCy(2)} ${dataCy(
+        RUNTIME_ARGS_VALUE_SELECTOR
+      )}`
+    ).should('not.exist');
   });
 });
 
@@ -277,12 +302,12 @@ describe('Deploying pipeline with saved runtime arguments', () => {
   const runtimeArgsPipeline = `runtime_args_pipeline_${Date.now()}`;
   before(() => {
     loginIfRequired().then(() => {
-      cy.getCookie('CDAP_Auth_Token').then(cookie => {
+      cy.getCookie('CDAP_Auth_Token').then((cookie) => {
         if (!cookie) {
           return;
         }
         headers = {
-          Authorization: 'Bearer ' + cookie.value
+          Authorization: 'Bearer ' + cookie.value,
         };
       });
     });
@@ -302,7 +327,7 @@ describe('Deploying pipeline with saved runtime arguments', () => {
     cy.upload_pipeline(
       'pipeline_with_macros.json',
       '#pipeline-import-config-link > input[type="file"]'
-    ).then(subject => {
+    ).then((subject) => {
       expect(subject.length).to.be.eq(1);
     });
     cy.get('[title="Airport_source"').should('exist');
@@ -325,13 +350,13 @@ describe('Deploying pipeline with saved runtime arguments', () => {
     cy.update_runtime_args_row(1, 'sink_path', SINK_PATH_VAL, true);
     cy.get(dataCy('save-runtime-args-btn')).click();
     cy.get(dataCy('save-runtime-args-btn')).should('not.be.visible');
-    cy.get(dataCy("pipeline-run-btn")).should('be.visible');
+    cy.get(dataCy('pipeline-run-btn')).should('be.visible');
     cy.get(dataCy('pipeline-run-btn')).click({ force: true });
     cy.get(dataCy('Succeeded'), { timeout: PIPELINE_RUN_TIMEOUT }).should('exist');
   });
 
   it('should have saved runtime arguments available and validating other valid actions with runtime arguments', () => {
-    //Verifying values are persisted
+    // Verifying values are persisted
     cy.get('.arrow-btn-container').click();
     cy.assert_runtime_args_row(0, 'source_path', SOURCE_PATH_VAL, true);
     cy.assert_runtime_args_row(1, 'sink_path', SINK_PATH_VAL, true);
@@ -342,7 +367,7 @@ describe('Deploying pipeline with saved runtime arguments', () => {
     cy.assert_runtime_args_row(2, 'runtime_args_key2', 'runtime_args_value2');
     cy.assert_runtime_args_row(3, 'runtime_args_key3', 'runtime_args_value3');
     cy.assert_runtime_args_row(4, 'runtime_args_key4', 'runtime_args_value4');
-    //saving previously entered arguments and openeing the modal again to verify
+    // saving previously entered arguments and openeing the modal again to verify
     cy.get(dataCy('save-runtime-args-btn')).click();
     cy.get(dataCy('save-runtime-args-btn')).should('not.be.visible');
     cy.get('.arrow-btn-container').click();
@@ -355,7 +380,7 @@ describe('Deploying pipeline with saved runtime arguments', () => {
     // row 3 and 4 becomes row 2 and 3
     cy.assert_runtime_args_row(2, 'runtime_args_key3', 'runtime_args_value3', false);
     cy.assert_runtime_args_row(3, 'runtime_args_key4', 'runtime_args_value4', false);
-    // removing middle row ( row 2 ), row 3 becomes row 2, deleting that too 
+    // removing middle row ( row 2 ), row 3 becomes row 2, deleting that too
     cy.get(
       `${dataCy(RUNTIME_ARGS_DEPLOYED_SELECTOR)} ${dataCy(2)} ${dataCy('remove-row')}`
     ).click();
@@ -363,9 +388,11 @@ describe('Deploying pipeline with saved runtime arguments', () => {
       `${dataCy(RUNTIME_ARGS_DEPLOYED_SELECTOR)} ${dataCy(2)} ${dataCy('remove-row')}`
     ).click();
     // we should be left with original macros
-    cy.get(`${dataCy(RUNTIME_ARGS_DEPLOYED_SELECTOR)} ${dataCy(2)} ${
-      dataCy(RUNTIME_ARGS_VALUE_SELECTOR)}`)
-      .should('not.exist');
+    cy.get(
+      `${dataCy(RUNTIME_ARGS_DEPLOYED_SELECTOR)} ${dataCy(2)} ${dataCy(
+        RUNTIME_ARGS_VALUE_SELECTOR
+      )}`
+    ).should('not.exist');
     cy.assert_runtime_args_row(0, 'source_path', SOURCE_PATH_VAL, true);
     cy.assert_runtime_args_row(1, 'sink_path', SINK_PATH_VAL, true);
   });
