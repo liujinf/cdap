@@ -23,9 +23,19 @@ import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
+import org.apache.hadoop.mapreduce.TaskAttemptID;
+import org.apache.hadoop.mapreduce.TaskID;
+import org.apache.hadoop.mapreduce.TaskType;
+import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * A wrapper around another input format, that limits the amount of data read.
@@ -34,8 +44,9 @@ import java.util.List;
  * @param <V> type of value to read
  */
 public class LimitingInputFormat<K, V> extends InputFormat<K, V> implements Configurable {
-  public static final String DELEGATE_CLASS_NAME = "io.cdap.pipeline.preview.input.classname";
-  public static final String MAX_RECORDS = "io.cdap.pipeline.preview.max.records";
+
+  static final String DELEGATE_CLASS_NAME = "io.cdap.pipeline.preview.input.classname";
+  static final String MAX_RECORDS = "io.cdap.pipeline.preview.max.records";
 
   private InputFormat<K, V> delegateFormat;
   private Configuration conf;
@@ -43,16 +54,90 @@ public class LimitingInputFormat<K, V> extends InputFormat<K, V> implements Conf
   @Override
   public List<InputSplit> getSplits(JobContext context) throws IOException, InterruptedException {
     Configuration conf = context.getConfiguration();
-    return createDelegate(conf).getSplits(context);
+    int maxRecords = conf.getInt(MAX_RECORDS, 100);
+
+    List<InputSplit> splits = createDelegate(conf).getSplits(context);
+    if (splits.size() <= 1) {
+      int limit = maxRecords;
+      return splits.stream().map(s -> new LimitingInputSplit(conf, s, limit)).collect(Collectors.toList());
+    }
+
+    // If there are more than one splits, try to read records from each split to determine what's the actual split
+    // limit per split.
+    Map<InputSplit, Integer> recordLimits = new IdentityHashMap<>();
+    TaskID taskId = new TaskID(context.getJobID(), TaskType.JOB_SETUP, 0);
+    TaskAttemptContext taskContext = new TaskAttemptContextImpl(conf, new TaskAttemptID(taskId, 0));
+    List<InputSplit> activeSplits = new LinkedList<>(splits);
+    while (maxRecords > 0 && !activeSplits.isEmpty()) {
+      int recordPerSplit = Math.max(1, maxRecords / activeSplits.size());
+
+      Iterator<InputSplit> iterator = activeSplits.iterator();
+      while (iterator.hasNext()) {
+        InputSplit split = iterator.next();
+
+        // We close the record reader in each iteration to avoid keeping all of them open to preserve memory
+        // in case there are a lot of partitions.
+        try (RecordReader<K, V> reader = createRecordReader(split, taskContext)) {
+          reader.initialize(split, taskContext);
+          int consumed = recordLimits.getOrDefault(split, 0);
+          int skipped = skipRecords(reader, consumed + recordPerSplit);
+
+          // If we skipped more than what's being consumed in last iteration, we need to include more records
+          // from this input.
+          if (skipped > consumed) {
+            maxRecords -= (skipped - consumed);
+            recordLimits.put(split, skipped);
+          }
+
+          if (!reader.nextKeyValue()) {
+            iterator.remove();
+          }
+        }
+        if (maxRecords <= 0) {
+          break;
+        }
+      }
+    }
+
+    // Loop the map with the original input split order to construct the final input splits
+    List<InputSplit> resultSplits = new ArrayList<>();
+    for (InputSplit split : splits) {
+      Integer recordLimit = recordLimits.get(split);
+      if (recordLimit == null || recordLimit <= 0) {
+        continue;
+      }
+      resultSplits.add(new LimitingInputSplit(conf, split, recordLimit));
+    }
+    return resultSplits;
   }
 
   @Override
-  public RecordReader<K, V> createRecordReader(InputSplit split, TaskAttemptContext context)
-    throws IOException, InterruptedException {
+  public RecordReader<K, V> createRecordReader(InputSplit split,
+                                               TaskAttemptContext context) throws IOException, InterruptedException {
     Configuration conf = context.getConfiguration();
-    int maxRecords = conf.getInt(MAX_RECORDS, 100);
-    RecordReader<K, V> delegate = delegateFormat.createRecordReader(split, context);
-    return new LimitingRecordReader<>(delegate, maxRecords);
+    int limit = conf.getInt(MAX_RECORDS, 100);
+    InputSplit readerSplit = split;
+    if (split instanceof LimitingInputSplit) {
+      limit = ((LimitingInputSplit) split).getRecordLimit();
+      readerSplit = ((LimitingInputSplit) split).getDelegate();
+    }
+    RecordReader<K, V> delegate = delegateFormat.createRecordReader(readerSplit, context);
+    return new LimitingRecordReader<>(delegate, limit);
+  }
+
+  /**
+   * Skips the given number of records from the given {@link RecordReader}.
+   *
+   * @param reader the {@link RecordReader} to read from
+   * @param skip number of records to skip
+   * @return the number of records being skipped
+   */
+  private int skipRecords(RecordReader<K, V> reader, int skip) throws IOException, InterruptedException {
+    int count = 0;
+    while (count != skip && reader.nextKeyValue()) {
+      count++;
+    }
+    return count;
   }
 
   private InputFormat<K, V> createDelegate(Configuration conf) throws IOException {
