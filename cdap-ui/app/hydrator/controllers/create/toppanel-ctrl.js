@@ -477,7 +477,16 @@ class HydratorPlusPlusTopPanelCtrl {
 
   startOrStopPreview() {
     if (this.validToStartPreview) {
-      this.getRuntimeArguments()
+      this.doStartOrStopPreview();
+    } else {
+      // Validate and show runtime arguments if there are
+      // un-fulfilled macros.
+      this.toggleConfig();
+    }
+  }
+
+  doStartOrStopPreview() {
+    this.getRuntimeArguments()
       .then(() => {
         if (this.previewRunning) {
           this.stopPreview();
@@ -485,9 +494,6 @@ class HydratorPlusPlusTopPanelCtrl {
           this.onPreviewStart();
         }
       });
-    } else {
-      this.toggleConfig();
-    }
   }
 
   toggleScheduler() {
